@@ -1,27 +1,25 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99
+CFLAGS = -Wall -Wextra -std=c99 -D_GNU_SOURCE
 TARGET = ccron
 
-# Fichiers sources et objets
-SRCS = main.c cron.c
-OBJS = $(SRCS:.c=.o)
+OBJS = main.o cron.o validate.o json.o
 
-# Règle par défaut
 all: $(TARGET)
 
-# Édition de liens pour créer l'exécutable
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
 
-# Compilation des fichiers sources en objets
-%.o: %.c cron.h
-	$(CC) $(CFLAGS) -c $< -o $@
+main.o: main.c cron.h
+	$(CC) $(CFLAGS) -c main.c -o main.o
 
-# Nettoyage des fichiers compilés
+cron.o: cron.c cron.h
+	$(CC) $(CFLAGS) -c cron.c -o cron.o
+
+validate.o: validate.c cron.h
+	$(CC) $(CFLAGS) -c validate.c -o validate.o
+
+json.o: json.c cron.h
+	$(CC) $(CFLAGS) -c json.c -o json.o
+
 clean:
-	rm -f $(OBJS) $(TARGET)
-
-# Recompilation complète
-rebuild: clean all
-
-.PHONY: all clean rebuild
+	rm -f *.o $(TARGET)

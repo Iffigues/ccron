@@ -18,11 +18,28 @@ typedef struct {
     int line_number;
     char env_vars[MAX_ENV_VARS][MAX_ENV_LEN];
     int env_count;
-    int is_reboot; // 1 si la tâche utilise @reboot
+    int is_reboot;
 } CronTask;
+
+// Structure de résultat enrichie avec les variables d'environnement
+typedef struct {
+    int id;
+    int line_number;
+    char name[64];
+    char command[768];
+    int exit_code;
+    char env_vars[MAX_ENV_VARS][MAX_ENV_LEN];
+    int env_count;
+} TaskResult;
 
 char *trim(char *str);
 int parse_cron_task(const char *line, int line_num, CronTask *task);
 void calculate_next_run(const CronTask *task);
+
+// Exécution silencieuse (ne logue sur stderr que si json_output est faux)
+int execute_task_silenced(const CronTask *task, int silent);
+
+int validate_crontab_file(const char *filename);
+void print_tasks_json(CronTask tasks[], int task_count, const char *source);
 
 #endif

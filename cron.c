@@ -3,6 +3,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/wait.h>
 #include "cron.h"
 
 char *trim(char *str) {
@@ -15,6 +17,88 @@ char *trim(char *str) {
     return str;
 }
 
+// Exécution avec paramètre `silent` (redirige stdout/stderr vers /dev/null si actif)
+int execute_task_silenced(const CronTask *task, int silent) {
+    if (!silent) {
+        fprintf(stderr, "\n[+] Exécution de la tâche (Ligne %d)%s%s...\n", 
+                task->line_number, 
+                task->name[0] ? " [Nom: " : "", 
+                task->name[0] ? task->name : "");
+        fprintf(stderr, "[+] Commande : %s\n", task->command);
+
+        if (task->env_count > 0) {
+            fprintf(stderr, "[+] Environnement injecté (%d variables) :\n", task->env_count);
+            for (int i = 0; i < task->env_count; i++) {
+                fprintf(stderr, "    -> %s\n", task->env_vars[i]);
+            }
+        } else {
+            fprintf(stderr, "[+] Aucun environnement spécifique (utilisation des valeurs par défaut)\n");
+        }
+        fprintf(stderr, "----------------------------------------\n");
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+
+    if (pid == 0) {
+        // Si le mode JSON/silencieux est actif, on masque les sorties des scripts exécutés
+        if (silent) {
+            freopen("/dev/null", "w", stdout);
+            freopen("/dev/null", "w", stderr);
+        }
+
+        int has_path = 0;
+        int has_shell = 0;
+
+        for (int i = 0; i < task->env_count; i++) {
+            if (strncmp(task->env_vars[i], "PATH=", 5) == 0) has_path = 1;
+            if (strncmp(task->env_vars[i], "SHELL=", 6) == 0) has_shell = 1;
+        }
+
+        int total_env = task->env_count + (!has_path ? 1 : 0) + (!has_shell ? 1 : 0) + 1;
+        
+        char **envp = malloc(total_env * sizeof(char *));
+        if (!envp) {
+            _exit(1);
+        }
+
+        int idx = 0;
+        for (int i = 0; i < task->env_count; i++) {
+            envp[idx++] = (char *)task->env_vars[i];
+        }
+        if (!has_path) {
+            envp[idx++] = (char *)"PATH=/usr/bin:/bin";
+        }
+        if (!has_shell) {
+            envp[idx++] = (char *)"SHELL=/bin/sh";
+        }
+        envp[idx] = NULL;
+
+        char *args[] = { (char *)"sh", (char *)"-c", (char *)task->command, NULL };
+        
+        execve("/bin/sh", args, envp);
+        free(envp);
+        _exit(127);
+    } else {
+        int status;
+        waitpid(pid, &status, 0);
+        if (!silent) {
+            fprintf(stderr, "----------------------------------------\n");
+        }
+        if (WIFEXITED(status)) {
+            int exit_code = WEXITSTATUS(status);
+            if (!silent) {
+                fprintf(stderr, "[+] Processus terminé avec le code de retour : %d\n", exit_code);
+            }
+            return exit_code;
+        } else {
+            return -1;
+        }
+    }
+}
+
 // Parseur étendu (gère les 5 champs standards ET les macros textuelles @...)
 int parse_cron_task(const char *line, int line_num, CronTask *task) {
     task->line_number = line_num;
@@ -22,7 +106,6 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
     task->name[0] = '\0';
     task->is_reboot = 0;
 
-    // Gestion des macros textuelles (ex: @daily, @reboot, etc.)
     if (line[0] == '@') {
         char macro[32];
         char cmd[768];
@@ -42,7 +125,7 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
                 strcpy(task->minute, "@reboot");
                 task->hour[0] = '\0'; task->day_month[0] = '\0'; task->month[0] = '\0'; task->day_week[0] = '\0';
             } else {
-                return 0; // Macro inconnue
+                return 0;
             }
             strcpy(task->command, cmd);
             return 1;
@@ -50,7 +133,6 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
         return 0;
     }
 
-    // Format standard à 5 champs
     int ret = sscanf(line, "%15s %15s %15s %15s %15s %[^\n]",
                      task->minute,
                      task->hour,
