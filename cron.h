@@ -1,0 +1,28 @@
+#ifndef CRON_H
+#define CRON_H
+
+#include <stdio.h>
+
+#define MAX_LINE_LENGTH 1024
+#define MAX_ENV_VARS 50
+#define MAX_ENV_LEN 256
+
+typedef struct {
+    char name[64];
+    char minute[16];
+    char hour[16];
+    char day_month[16];
+    char month[16];
+    char day_week[16];
+    char command[768];
+    int line_number;
+    char env_vars[MAX_ENV_VARS][MAX_ENV_LEN];
+    int env_count;
+    int is_reboot; // 1 si la tâche utilise @reboot
+} CronTask;
+
+char *trim(char *str);
+int parse_cron_task(const char *line, int line_num, CronTask *task);
+void calculate_next_run(const CronTask *task);
+
+#endif

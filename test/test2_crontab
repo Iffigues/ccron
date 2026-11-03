@@ -1,0 +1,5 @@
+# @tache_quotidienne
+@daily echo "Rapport journalier"
+
+# @tache_redemarrage
+@reboot echo "Nettoyage au boot"
