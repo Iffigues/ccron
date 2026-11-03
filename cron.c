@@ -43,7 +43,6 @@ int execute_task_silenced(const CronTask *task, int silent) {
     }
 
     if (pid == 0) {
-        // Si le mode JSON/silencieux est actif, on masque les sorties des scripts exécutés
         if (silent) {
             freopen("/dev/null", "w", stdout);
             freopen("/dev/null", "w", stderr);
@@ -233,4 +232,42 @@ void calculate_next_run(const CronTask *task) {
         mktime(t);
     }
     printf("[!] Aucune exécution trouvée dans l'année à venir.\n");
+}
+
+void get_next_run_string(const CronTask *task, char *dest, size_t dest_size) {
+    if (task->is_reboot) {
+        snprintf(dest, dest_size, "Au prochain redémarrage du système (@reboot)");
+        return;
+    }
+
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+
+    t->tm_sec = 0;
+    t->tm_min += 1;
+    mktime(t);
+
+    for (int i = 0; i < 525600; i++) {
+        int min = t->tm_min;
+        int hour = t->tm_hour;
+        int day = t->tm_mday;
+        int month = t->tm_mon + 1;
+        int dow = t->tm_wday;
+
+        if (match_cron_field(task->minute, min) &&
+            match_cron_field(task->hour, hour) &&
+            match_cron_field(task->day_month, day) &&
+            match_cron_field(task->month, month) &&
+            match_cron_field(task->day_week, dow)) {
+            
+            char buffer[80];
+            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", t);
+            snprintf(dest, dest_size, "%s (dans ~%d minutes)", buffer, i + 1);
+            return;
+        }
+
+        t->tm_min += 1;
+        mktime(t);
+    }
+    snprintf(dest, dest_size, "Aucune exécution trouvée dans l'année à venir");
 }

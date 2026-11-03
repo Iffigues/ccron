@@ -21,7 +21,6 @@ typedef struct {
     int is_reboot;
 } CronTask;
 
-// Structure de résultat enrichie avec les variables d'environnement
 typedef struct {
     int id;
     int line_number;
@@ -35,10 +34,8 @@ typedef struct {
 char *trim(char *str);
 int parse_cron_task(const char *line, int line_num, CronTask *task);
 void calculate_next_run(const CronTask *task);
-
-// Exécution silencieuse (ne logue sur stderr que si json_output est faux)
+void get_next_run_string(const CronTask *task, char *dest, size_t dest_size);
 int execute_task_silenced(const CronTask *task, int silent);
-
 int validate_crontab_file(const char *filename);
 void print_tasks_json(CronTask tasks[], int task_count, const char *source);
 
