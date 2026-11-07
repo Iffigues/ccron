@@ -1,0 +1,12 @@
+# Configuration de test standard
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# @tache_chaque_minute
+* * * * * echo "Test minute"
+
+# @backup_nuit
+0 2 * * * /usr/bin/backup.sh --full
+
+# Tâche sans nom explicite
+*/15 * * * * date >> /tmp/date.log

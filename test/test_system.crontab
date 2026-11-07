@@ -1,0 +1,6 @@
+# Fichier de style /etc/cron.d/ avec des utilisateurs cibles
+# min hour dom mon dow user command
+
+0 3 * * * root /usr/bin/apt-get update -y
+*/30 * * * * www-data /usr/bin/php /var/www/html/artisan schedule:run
+0 0 1 * * postgres /usr/bin/vacuumdb --all --analyzer

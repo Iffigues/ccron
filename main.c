@@ -199,7 +199,7 @@ int main(int argc, char *argv[]) {
             printf("      \"id\": %d,\n", i + 1);
             printf("      \"line_number\": %d,\n", tasks[i].line_number);
             printf("      \"name\": \"%s\",\n", tasks[i].name);
-            printf("      \"schedule\": \"%s\",\n", tasks[i].is_reboot ? "@reboot" : tasks[i].minute);
+            printf("      \"schedule\": \"%s\",\n", tasks[i].schedule); // <-- Corrigé ici !
             printf("      \"command\": \"%s\",\n", tasks[i].command);
             printf("      \"env_count\": %d,\n", tasks[i].env_count);
             printf("      \"next_run\": \"%s\"\n", next_run_buf);

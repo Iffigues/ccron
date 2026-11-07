@@ -1,0 +1,4 @@
+# Test des raccourcis textuels
+@hourly echo "Exécution toutes les heures"
+@daily echo "Exécution quotidienne à minuit"
+@reboot echo "Nettoyage au démarrage"

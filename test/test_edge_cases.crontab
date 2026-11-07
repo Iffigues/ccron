@@ -1,0 +1,7 @@
+# Cas limites, listes, intervalles et commentaires
+
+# @tache_complexe
+*/5 8-18 * * 1-5 /opt/scripts/check_service.sh
+
+# @tache_multivalue
+0,15,30,45 * * * * echo "Quarts d'heure"

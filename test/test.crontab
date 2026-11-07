@@ -1,0 +1,8 @@
+cat << 'EOF' > test_crontab
+PATH=/usr/local/bin:/usr/bin:/bin
+SHELL=/bin/bash
+MY_CUSTOM_VAR="Hello depuis Cron"
+
+# @test_env
+* * * * * echo "$MY_CUSTOM_VAR - Path actuel : $PATH" > /tmp/cron_env_test.log
+EOF

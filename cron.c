@@ -4,7 +4,10 @@
 #include <ctype.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/wait.h>
+#include <pwd.h>
+#include <grp.h>
 #include "cron.h"
 
 char *trim(char *str) {
@@ -20,10 +23,15 @@ char *trim(char *str) {
 // Exécution avec paramètre `silent` (redirige stdout/stderr vers /dev/null si actif)
 int execute_task_silenced(const CronTask *task, int silent) {
     if (!silent) {
-        fprintf(stderr, "\n[+] Exécution de la tâche (Ligne %d)%s%s...\n", 
+        fprintf(stderr, "\n[+] Exécution de la tâche (Ligne %d)%s%s%s%s...\n", 
                 task->line_number, 
                 task->name[0] ? " [Nom: " : "", 
-                task->name[0] ? task->name : "");
+                task->name[0] ? task->name : "",
+                task->user[0] ? " [User: " : "",
+                task->user[0] ? task->user : "");
+        if (task->user[0]) {
+            fprintf(stderr, "[+] Utilisateur cible : %s\n", task->user);
+        }
         fprintf(stderr, "[+] Commande : %s\n", task->command);
 
         if (task->env_count > 0) {
@@ -46,6 +54,16 @@ int execute_task_silenced(const CronTask *task, int silent) {
         if (silent) {
             freopen("/dev/null", "w", stdout);
             freopen("/dev/null", "w", stderr);
+        }
+
+        // Gestion optionnelle du changement d'utilisateur si spécifié et si on est root
+        if (task->user[0] != '\0') {
+            struct passwd *pw = getpwnam(task->user);
+            if (pw != NULL) {
+                initgroups(task->user, pw->pw_gid);
+                setgid(pw->pw_gid);
+                setuid(pw->pw_uid);
+            }
         }
 
         int has_path = 0;
@@ -98,17 +116,17 @@ int execute_task_silenced(const CronTask *task, int silent) {
     }
 }
 
-// Parseur étendu (gère les 5 champs standards ET les macros textuelles @...)
 int parse_cron_task(const char *line, int line_num, CronTask *task) {
+    // Nettoyage complet de la structure pour éviter les résidus des lignes précédentes
+    memset(task, 0, sizeof(CronTask));
+
     task->line_number = line_num;
-    task->env_count = 0;
-    task->name[0] = '\0';
-    task->is_reboot = 0;
 
     if (line[0] == '@') {
         char macro[32];
         char cmd[768];
         if (sscanf(line, "%31s %[^\n]", macro, cmd) == 2) {
+            strcpy(task->schedule, macro); // Stocke bien la macro
             if (strcmp(macro, "@yearly") == 0 || strcmp(macro, "@annually") == 0) {
                 strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "1"); strcpy(task->month, "1"); strcpy(task->day_week, "*");
             } else if (strcmp(macro, "@monthly") == 0) {
@@ -122,7 +140,6 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
             } else if (strcmp(macro, "@reboot") == 0) {
                 task->is_reboot = 1;
                 strcpy(task->minute, "@reboot");
-                task->hour[0] = '\0'; task->day_month[0] = '\0'; task->month[0] = '\0'; task->day_week[0] = '\0';
             } else {
                 return 0;
             }
@@ -132,17 +149,45 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
         return 0;
     }
 
-    int ret = sscanf(line, "%15s %15s %15s %15s %15s %[^\n]",
-                     task->minute,
-                     task->hour,
-                     task->day_month,
-                     task->month,
-                     task->day_week,
-                     task->command);
+    // ... le reste de ta fonction inchangé ...
+
+    // 2. Format système (5 champs de temps + 1 nom d'utilisateur valide + commande)
+    char f1[16], f2[16], f3[16], f4[16], f5[16], token6[64], cmd[768];
+    int ret = sscanf(line, "%15s %15s %15s %15s %15s %63s %[^\n]", f1, f2, f3, f4, f5, token6, cmd);
+
+    if (ret >= 7) {
+        struct passwd *pw = getpwnam(token6);
+        if (pw != NULL) {
+            strcpy(task->minute, f1);
+            strcpy(task->hour, f2);
+            strcpy(task->day_month, f3);
+            strcpy(task->month, f4);
+            strcpy(task->day_week, f5);
+            strcpy(task->user, token6);
+            // On stocke l'expression temporelle complète dans schedule
+            snprintf(task->schedule, sizeof(task->schedule), "%s %s %s %s %s", f1, f2, f3, f4, f5);
+            strcpy(task->command, cmd);
+            return 1;
+        }
+    }
+
+    // 3. Format standard à 5 champs (utilisateur courant implicite)
+    ret = sscanf(line, "%15s %15s %15s %15s %15s %[^\n]",
+                 task->minute,
+                 task->hour,
+                 task->day_month,
+                 task->month,
+                 task->day_week,
+                 task->command);
 
     if (ret < 6) {
         return 0;
     }
+
+    // Stocke l'expression temporelle complète
+    snprintf(task->schedule, sizeof(task->schedule), "%s %s %s %s %s", 
+             task->minute, task->hour, task->day_month, task->month, task->day_week);
+
     return 1;
 }
 
