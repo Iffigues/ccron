@@ -7,7 +7,6 @@
 
 #define MAX_TASKS 100
 
-// Fonction utilitaire pour ajouter ou mettre à jour une variable d'environnement (style cron)
 void set_env(char env_vars[MAX_ENV_VARS][MAX_ENV_LEN], int *env_count, const char *env_line) {
     char line_copy[MAX_ENV_LEN];
     strncpy(line_copy, env_line, sizeof(line_copy) - 1);
@@ -61,7 +60,6 @@ int main(int argc, char *argv[]) {
     int json_output = 0;
     int run_all = 0;
 
-    // Analyse des arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--next") == 0 || strcmp(argv[i], "-n") == 0) {
             dry_run = 1;
@@ -74,7 +72,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Gestion de l'option --check
     if (strict_check) {
         char *check_file = NULL;
         for (int i = 1; i < argc; i++) {
@@ -85,11 +82,9 @@ int main(int argc, char *argv[]) {
                 break;
             }
         }
-        int success = validate_crontab_file(check_file);
-        return success ? 0 : 1;
+        return validate_crontab_file(check_file);
     }
 
-    // Filtrage des arguments non-flags
     int non_flag_argc = 0;
     char *non_flag_argv[3];
     for (int i = 1; i < argc; i++) {
@@ -134,6 +129,7 @@ int main(int argc, char *argv[]) {
     int line_num = 0;
     
     char current_name[64] = "";
+    char current_tz[64] = "";
     char current_env[MAX_ENV_VARS][MAX_ENV_LEN];
     int current_env_count = 0;
 
@@ -151,6 +147,12 @@ int main(int argc, char *argv[]) {
 
         if (trimmed[0] == '#') continue;
 
+        if (strncmp(trimmed, "TZ=", 3) == 0) {
+            sscanf(trimmed, "TZ=%63s", current_tz);
+            current_tz[strcspn(current_tz, "\r\n")] = '\0';
+            continue;
+        }
+
         if (strchr(trimmed, '=') && !isdigit((unsigned char)trimmed[0]) && trimmed[0] != '*' && trimmed[0] != '@') {
             set_env(current_env, &current_env_count, trimmed);
             continue;
@@ -159,6 +161,8 @@ int main(int argc, char *argv[]) {
         if (parse_cron_task(trimmed, line_num, &tasks[task_count])) {
             strcpy(tasks[task_count].name, current_name);
             current_name[0] = '\0'; 
+
+            strncpy(tasks[task_count].tz, current_tz, sizeof(tasks[task_count].tz));
 
             tasks[task_count].env_count = current_env_count;
             for (int i = 0; i < current_env_count; i++) {
@@ -177,13 +181,27 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // Gestion du format JSON global si demandé (sans --all ni cible ni next)
+    // Gestion du format JSON global si --json est passé seul (sans --all, --next ni cible)
     if (json_output && target_arg == NULL && !run_all && !dry_run) {
-        print_tasks_json(tasks, task_count, crontab_source);
+        printf("{\n");
+        printf("  \"execution_mode\": \"global_list\",\n");
+        printf("  \"source\": \"%s\",\n", crontab_source);
+        printf("  \"task_count\": %d,\n", task_count);
+        printf("  \"tasks\": [\n");
+        for (int i = 0; i < task_count; i++) {
+            printf("    {\n");
+            printf("      \"id\": %d,\n", i + 1);
+            printf("      \"line_number\": %d,\n", tasks[i].line_number);
+            printf("      \"name\": \"%s\",\n", tasks[i].name);
+            printf("      \"schedule\": \"%s\",\n", tasks[i].schedule);
+            printf("      \"command\": \"%s\",\n", tasks[i].command);
+            printf("      \"env_count\": %d\n", tasks[i].env_count);
+            printf("    }%s\n", (i < task_count - 1) ? "," : "");
+        }
+        printf("  ]\n}\n");
         return 0;
     }
 
-    // Gestion de la combinaison --next --json
     if (dry_run && json_output) {
         printf("{\n");
         printf("  \"execution_mode\": \"dry_run\",\n");
@@ -199,7 +217,7 @@ int main(int argc, char *argv[]) {
             printf("      \"id\": %d,\n", i + 1);
             printf("      \"line_number\": %d,\n", tasks[i].line_number);
             printf("      \"name\": \"%s\",\n", tasks[i].name);
-            printf("      \"schedule\": \"%s\",\n", tasks[i].schedule); // <-- Corrigé ici !
+            printf("      \"schedule\": \"%s\",\n", tasks[i].schedule);
             printf("      \"command\": \"%s\",\n", tasks[i].command);
             printf("      \"env_count\": %d,\n", tasks[i].env_count);
             printf("      \"next_run\": \"%s\"\n", next_run_buf);
@@ -209,7 +227,6 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // Traitement d'une cible spécifique (index ou nom)
     if (target_arg != NULL) {
         int found_index = -1;
 
@@ -230,8 +247,8 @@ int main(int argc, char *argv[]) {
         if (found_index != -1) {
             if (dry_run) {
                 printf("[Dry-Run] Analyse de la tâche : [%s] %s\n",
-                       tasks[found_index].is_reboot ? "@reboot" : tasks[found_index].minute,
-                       tasks[found_index].command);
+                        tasks[found_index].is_reboot ? "@reboot" : tasks[found_index].minute,
+                        tasks[found_index].command);
                 calculate_next_run(&tasks[found_index]);
                 return 0;
             } else {
@@ -273,7 +290,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Mode listing général (affiché uniquement si --json n'est pas actif)
     if (!json_output) {
         printf("=== Analyse de la source : %s ===\n", crontab_source);
         for (int i = 0; i < task_count; i++) {
@@ -294,7 +310,6 @@ int main(int argc, char *argv[]) {
 
     if (dry_run) return 0;
 
-    // Exécution de toutes les tâches avec --all
     if (run_all) {
         TaskResult *results = malloc(task_count * sizeof(TaskResult));
         if (!results) {
@@ -354,7 +369,6 @@ int main(int argc, char *argv[]) {
         return global_exit;
     }
 
-    // Menu interactif
     int choice;
     printf("\nEntrez le numéro de la tâche à tester (1-%d, ou 0 pour quitter) : ", task_count);
     if (scanf("%d", &choice) == 1) {

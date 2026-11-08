@@ -20,7 +20,6 @@ char *trim(char *str) {
     return str;
 }
 
-// Exécution avec paramètre `silent` (redirige stdout/stderr vers /dev/null si actif)
 int execute_task_silenced(const CronTask *task, int silent) {
     if (!silent) {
         fprintf(stderr, "\n[+] Exécution de la tâche (Ligne %d)%s%s%s%s...\n", 
@@ -56,7 +55,6 @@ int execute_task_silenced(const CronTask *task, int silent) {
             freopen("/dev/null", "w", stderr);
         }
 
-        // Gestion optionnelle du changement d'utilisateur si spécifié et si on est root
         if (task->user[0] != '\0') {
             struct passwd *pw = getpwnam(task->user);
             if (pw != NULL) {
@@ -116,40 +114,54 @@ int execute_task_silenced(const CronTask *task, int silent) {
     }
 }
 
-int parse_cron_task(const char *line, int line_num, CronTask *task) {
-    // Nettoyage complet de la structure pour éviter les résidus des lignes précédentes
-    memset(task, 0, sizeof(CronTask));
+static int apply_macro_schedule(CronTask *task, const char *macro) {
+    strcpy(task->schedule, macro);
+    if (strcmp(macro, "@yearly") == 0 || strcmp(macro, "@annually") == 0) {
+        strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "1"); strcpy(task->month, "1"); strcpy(task->day_week, "*");
+    } else if (strcmp(macro, "@monthly") == 0) {
+        strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "1"); strcpy(task->month, "*"); strcpy(task->day_week, "*");
+    } else if (strcmp(macro, "@weekly") == 0) {
+        strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "*"); strcpy(task->month, "*"); strcpy(task->day_week, "0");
+    } else if (strcmp(macro, "@daily") == 0 || strcmp(macro, "@midnight") == 0) {
+        strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "*"); strcpy(task->month, "*"); strcpy(task->day_week, "*");
+    } else if (strcmp(macro, "@hourly") == 0) {
+        strcpy(task->minute, "0"); strcpy(task->hour, "*"); strcpy(task->day_month, "*"); strcpy(task->month, "*"); strcpy(task->day_week, "*");
+    } else if (strcmp(macro, "@reboot") == 0) {
+        task->is_reboot = 1;
+        strcpy(task->minute, "@reboot");
+    } else {
+        return 0;
+    }
+    return 1;
+}
 
+int parse_cron_task(const char *line, int line_num, CronTask *task) {
+    memset(task, 0, sizeof(CronTask));
     task->line_number = line_num;
 
+    // 1. Gestion des lignes de type macro (commençant par @)
     if (line[0] == '@') {
         char macro[32];
+        char token2[64];
         char cmd[768];
-        if (sscanf(line, "%31s %[^\n]", macro, cmd) == 2) {
-            strcpy(task->schedule, macro); // Stocke bien la macro
-            if (strcmp(macro, "@yearly") == 0 || strcmp(macro, "@annually") == 0) {
-                strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "1"); strcpy(task->month, "1"); strcpy(task->day_week, "*");
-            } else if (strcmp(macro, "@monthly") == 0) {
-                strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "1"); strcpy(task->month, "*"); strcpy(task->day_week, "*");
-            } else if (strcmp(macro, "@weekly") == 0) {
-                strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "*"); strcpy(task->month, "*"); strcpy(task->day_week, "0");
-            } else if (strcmp(macro, "@daily") == 0 || strcmp(macro, "@midnight") == 0) {
-                strcpy(task->minute, "0"); strcpy(task->hour, "0"); strcpy(task->day_month, "*"); strcpy(task->month, "*"); strcpy(task->day_week, "*");
-            } else if (strcmp(macro, "@hourly") == 0) {
-                strcpy(task->minute, "0"); strcpy(task->hour, "*"); strcpy(task->day_month, "*"); strcpy(task->month, "*"); strcpy(task->day_week, "*");
-            } else if (strcmp(macro, "@reboot") == 0) {
-                task->is_reboot = 1;
-                strcpy(task->minute, "@reboot");
-            } else {
-                return 0;
+
+        // Tentative 1 : Format macro avec utilisateur optionnel (ex: @daily root command)
+        if (sscanf(line, "%31s %63s %[^\n]", macro, token2, cmd) == 3) {
+            struct passwd *pw = getpwnam(token2);
+            if (pw != NULL) {
+                strcpy(task->user, token2);
+                strcpy(task->command, cmd);
+                return apply_macro_schedule(task, macro);
             }
+        }
+
+        // Tentative 2 : Format macro standard sans utilisateur (ex: @daily command)
+        if (sscanf(line, "%31s %[^\n]", macro, cmd) == 2) {
             strcpy(task->command, cmd);
-            return 1;
+            return apply_macro_schedule(task, macro);
         }
         return 0;
     }
-
-    // ... le reste de ta fonction inchangé ...
 
     // 2. Format système (5 champs de temps + 1 nom d'utilisateur valide + commande)
     char f1[16], f2[16], f3[16], f4[16], f5[16], token6[64], cmd[768];
@@ -164,7 +176,6 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
             strcpy(task->month, f4);
             strcpy(task->day_week, f5);
             strcpy(task->user, token6);
-            // On stocke l'expression temporelle complète dans schedule
             snprintf(task->schedule, sizeof(task->schedule), "%s %s %s %s %s", f1, f2, f3, f4, f5);
             strcpy(task->command, cmd);
             return 1;
@@ -184,14 +195,11 @@ int parse_cron_task(const char *line, int line_num, CronTask *task) {
         return 0;
     }
 
-    // Stocke l'expression temporelle complète
     snprintf(task->schedule, sizeof(task->schedule), "%s %s %s %s %s", 
              task->minute, task->hour, task->day_month, task->month, task->day_week);
 
     return 1;
 }
-
-// --- Moteur Dry-Run ---
 
 static int match_single_val(const char *expr, int val) {
     if (strcmp(expr, "*") == 0) return 1;
@@ -247,6 +255,12 @@ void calculate_next_run(const CronTask *task) {
         return;
     }
 
+    char *old_tz = getenv("TZ");
+    if (task->tz[0] != '\0') {
+        setenv("TZ", task->tz, 1);
+        tzset();
+    }
+
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
 
@@ -270,12 +284,25 @@ void calculate_next_run(const CronTask *task) {
             char buffer[80];
             strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", t);
             printf("[+] Prochaine exécution prévue le : %s (dans ~%d minutes)\n", buffer, i + 1);
+
+            if (task->tz[0] != '\0') {
+                if (old_tz) setenv("TZ", old_tz, 1);
+                else unsetenv("TZ");
+                tzset();
+            }
             return;
         }
 
         t->tm_min += 1;
         mktime(t);
     }
+
+    if (task->tz[0] != '\0') {
+        if (old_tz) setenv("TZ", old_tz, 1);
+        else unsetenv("TZ");
+        tzset();
+    }
+
     printf("[!] Aucune exécution trouvée dans l'année à venir.\n");
 }
 
@@ -283,6 +310,12 @@ void get_next_run_string(const CronTask *task, char *dest, size_t dest_size) {
     if (task->is_reboot) {
         snprintf(dest, dest_size, "Au prochain redémarrage du système (@reboot)");
         return;
+    }
+
+    char *old_tz = getenv("TZ");
+    if (task->tz[0] != '\0') {
+        setenv("TZ", task->tz, 1);
+        tzset();
     }
 
     time_t now = time(NULL);
@@ -308,11 +341,24 @@ void get_next_run_string(const CronTask *task, char *dest, size_t dest_size) {
             char buffer[80];
             strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", t);
             snprintf(dest, dest_size, "%s (dans ~%d minutes)", buffer, i + 1);
+
+            if (task->tz[0] != '\0') {
+                if (old_tz) setenv("TZ", old_tz, 1);
+                else unsetenv("TZ");
+                tzset();
+            }
             return;
         }
 
         t->tm_min += 1;
         mktime(t);
     }
+
+    if (task->tz[0] != '\0') {
+        if (old_tz) setenv("TZ", old_tz, 1);
+        else unsetenv("TZ");
+        tzset();
+    }
+
     snprintf(dest, dest_size, "Aucune exécution trouvée dans l'année à venir");
 }

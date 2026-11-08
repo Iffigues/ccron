@@ -1,0 +1,26 @@
+# Fichier de test complet pour ccron (avec support TZ et linter)
+
+# Définition globale de variables
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Test avec un fuseau horaire spécifique (New York)
+TZ=America/New_York
+# @backup_us
+0 2 * * * /usr/bin/backup_us.sh
+
+# Test avec un autre fuseau horaire (Paris)
+TZ=Europe/Paris
+# @rapport_matin
+30 8 * * 1-5 echo "Rapport quotidien Paris"
+
+# Test avec des pas complexes et des variables d'environnement locales
+MY_VAR="Production"
+*/15 9-18 * * 1-5 echo "Tâche toutes les 15 minutes en journée - $MY_VAR"
+
+# Test des macros et des tâches système (avec utilisateur si format 6 champs)
+# @tache_quotidienne
+@daily root /usr/bin/apt-get update -y
+
+# @nettoyage_boot
+@reboot echo "Nettoyage au démarrage du système"
