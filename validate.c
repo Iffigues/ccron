@@ -19,7 +19,7 @@ int validate_crontab_file(const char *filename) {
 
     if (!file) {
         fprintf(stderr, "[FAIL] Impossible d'ouvrir la source crontab pour validation.\n");
-        return 0;
+        return 1;
     }
 
     char line[MAX_LINE_LENGTH];
@@ -31,7 +31,11 @@ int validate_crontab_file(const char *filename) {
         line_num++;
         char *trimmed = trim(line);
 
-        if (trimmed[0] == '\0' || trimmed[0] == '#' || strchr(trimmed, '=')) {
+        if (trimmed[0] == '\0' || trimmed[0] == '#') {
+            continue;
+        }
+
+        if (strchr(trimmed, '=') && !isdigit((unsigned char)trimmed[0]) && trimmed[0] != '*' && trimmed[0] != '@') {
             continue;
         }
 
@@ -46,9 +50,9 @@ int validate_crontab_file(const char *filename) {
 
     if (error_count > 0) {
         fprintf(stderr, "Résultat : Échec de la validation (%d erreur(s) détectée(s)).\n", error_count);
-        return 0;
+        return 2;
     }
 
     printf("Succès : La syntaxe du crontab est valide.\n");
-    return 1;
+    return 0;
 }
